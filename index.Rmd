@@ -46,7 +46,10 @@ sf_use_s2(FALSE)
 goas_simplified <- goas %>%
   st_simplify(dTolerance = 0.1) %>%
   nngeo::st_remove_holes() %>%
-  select(name)
+  select(name) %>%
+  st_set_crs(NA) %>%
+  st_segmentize(1) %>%
+  st_set_crs(4326)
 ```
 
 ## Type localities dataset
@@ -71,6 +74,22 @@ ggplot() +
   facet_wrap(~period, ncol = 2)
 
 ggsave("output/type_localities_map.png", height = 6, width = 10, dpi = 400, bg = "white")
+```
+
+Version with Oceans and Seas polygons:
+
+```{r message=FALSE, warning=FALSE}
+ggplot() +
+  geom_sf(data = goas_simplified, aes(fill = name), size = 0) +
+  geom_sf(data = land, fill = "#ffffff", color = "#000000", size = 0.1) +
+  geom_sf(data = occ %>% filter(!is.na(period)), size = 0.3, color = "#000000") +
+  scale_fill_brewer(palette = "Paired") +
+  coord_sf(crs = "ESRI:54030") +
+  theme_void() +
+  theme(legend.position = "none") +
+  facet_wrap(~period, ncol = 2)
+
+ggsave("output/type_localities_map_oceans.png", height = 6, width = 10, dpi = 400, bg = "white")
 ```
 
 Join type localities with Oceans and Seas data shapefile:
