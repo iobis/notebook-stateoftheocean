@@ -1,0 +1,1 @@
+http://geo.vliz.be:80/geoserver/MarineRegions/ows?service=WFS&version=1.0.0&request=GetFeature&typeName=MarineRegions:goas&maxFeatures=50&outputFormat=SHAPE-ZIP

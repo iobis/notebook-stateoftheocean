@@ -1,0 +1,115 @@
+---
+title: State of the Ocean report
+date: "`r Sys.Date()`"
+author: Pieter Provoost
+output: (function(...) {
+  rmdformats::robobook(toc_depth = 4, pandoc_args = c("+RTS", "-K2000m", "-RTS"), ...) })
+editor_options: 
+  chunk_output_type: console
+knit: (function(inputFile, encoding) {
+  rmarkdown::render(inputFile, encoding = encoding, output_dir = "docs") })  
+---
+
+## Dependencies
+
+```{r message=FALSE, warning=FALSE}
+library(dplyr)
+library(ggplot2)
+library(sf)
+library(robis)
+library(rnaturalearth)
+library(stringr)
+library(cartomisc)
+```
+
+## Background spatial data
+
+```{r message=FALSE, warning=FALSE}
+countries <- ne_countries(returnclass = "sf")
+land <- landr::get_land_polygons(simplified = TRUE) %>%
+  st_simplify(dTolerance = 30000) %>%
+  filter(!st_is_empty(geometry))
+```
+
+## Oceans and seas
+
+```{r message=FALSE, warning=FALSE}
+if (!file.exists("data/goas.shp")) {
+  download.file("http://geo.vliz.be/geoserver/MarineRegions/ows?service=WFS&version=1.0.0&request=GetFeature&typeName=MarineRegions:goas&maxFeatures=50&outputFormat=SHAPE-ZIP", "data/goas.zip")
+  unzip("data/goas.zip", exdir = "data")
+}
+
+goas <- st_read("data/goas.shp", options = "ENCODING=UTF-8", quiet = TRUE)
+
+sf_use_s2(FALSE)
+
+goas_simplified <- goas %>%
+  st_simplify(dTolerance = 0.1) %>%
+  nngeo::st_remove_holes() %>%
+  select(name)
+```
+
+## Type localities dataset
+
+```{r message=FALSE, warning=FALSE}
+occ <- occurrence(datasetid = "b74b429a-4052-4f5b-bff3-fe0b5a2e8669") %>%
+  st_as_sf(coords = c("decimalLongitude", "decimalLatitude"), crs = 4326)
+
+breaks <- c(1800, 1900, 1950, 2000, 2100)
+labels <- head(paste0(breaks, " - ", breaks[2:length(breaks)]), -1)
+labels <- str_replace(labels, "2100", "")
+labels <- str_replace(labels, "1800", "")
+
+occ <- occ %>%
+  mutate(period = cut(date_year, breaks = breaks, labels = labels))
+
+ggplot() +
+  geom_sf(data = land, fill = NA, color = "#000000", size = 0.1) +
+  geom_sf(data = occ %>% filter(!is.na(period)), size = 0.3, color = "#000000") +
+  coord_sf(crs = "ESRI:54030") +
+  theme_void() +
+  facet_wrap(~period, ncol = 2)
+
+ggsave("output/type_localities_map.png", height = 6, width = 10, dpi = 400, bg = "white")
+```
+
+Join type localities with Oceans and Seas data shapefile:
+
+```{r message=FALSE, warning=FALSE}
+occ$goas <- goas_simplified$name[st_nearest_feature(occ, goas_simplified, check_crs = TRUE)]
+
+ggplot() +
+  geom_sf(data = land, fill = NA, color = "#000000", size = 0.1) +
+  geom_sf(data = occ %>% filter(!is.na(period)), aes(color = goas), size = 0.3) +
+  coord_sf(crs = "ESRI:54030") +
+  theme_void() +
+  scale_color_brewer(palette = "Paired") +
+  guides(color = guide_legend(title = "Oceans and Seas")) +
+  facet_wrap(~period, ncol = 2)
+
+ggsave("output/type_localities_map_color.png", height = 4, width = 9, dpi = 400, bg = "white")
+```
+
+Frequency table:
+
+```{r message=FALSE, warning=FALSE}
+occ_cleaned <- occ %>%
+  as.data.frame() %>%
+  filter(!is.na(period))
+
+stats <- round(table(occ_cleaned$goas, occ_cleaned$period) / nrow(occ_cleaned) * 100, digits = 2)
+stats %>% knitr::kable()
+```
+
+```{r message=FALSE, warning=FALSE}
+stats <- occ_cleaned %>%
+  group_by(period, goas) %>%
+  summarize(n = n())
+
+ggplot(stats) +
+  geom_bar(aes(x = period, y = n, fill = goas), stat = "identity") +
+  scale_fill_brewer(palette = "Paired") +
+  guides(fill = guide_legend(title = "Oceans and Seas"))
+
+ggsave("output/type_localities_barplot.png", height = 4, width = 7, dpi = 300, bg = "white", scale = 1.5)
+```
