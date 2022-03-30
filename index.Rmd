@@ -20,6 +20,8 @@ library(robis)
 library(rnaturalearth)
 library(stringr)
 library(cartomisc)
+library(arrow)
+library(nngeo)
 ```
 
 ## Background spatial data
@@ -55,7 +57,7 @@ goas_simplified <- goas %>%
 ## Type localities dataset
 
 ```{r message=FALSE, warning=FALSE}
-occ <- occurrence(datasetid = "b74b429a-4052-4f5b-bff3-fe0b5a2e8669") %>%
+localities <- occurrence(datasetid = "b74b429a-4052-4f5b-bff3-fe0b5a2e8669") %>%
   st_as_sf(coords = c("decimalLongitude", "decimalLatitude"), crs = 4326)
 
 breaks <- c(1800, 1900, 1950, 2000, 2100)
@@ -63,12 +65,12 @@ labels <- head(paste0(breaks, " - ", breaks[2:length(breaks)]), -1)
 labels <- str_replace(labels, "2100", "")
 labels <- str_replace(labels, "1800", "")
 
-occ <- occ %>%
+localities <- localities %>%
   mutate(period = cut(date_year, breaks = breaks, labels = labels))
 
 ggplot() +
   geom_sf(data = land, fill = NA, color = "#000000", size = 0.1) +
-  geom_sf(data = occ %>% filter(!is.na(period)), size = 0.3, color = "#000000") +
+  geom_sf(data = localities %>% filter(!is.na(period)), size = 0.3, color = "#000000") +
   coord_sf(crs = "ESRI:54030") +
   theme_void() +
   facet_wrap(~period, ncol = 2)
@@ -82,7 +84,7 @@ Version with Oceans and Seas polygons:
 ggplot() +
   geom_sf(data = goas_simplified, aes(fill = name), size = 0) +
   geom_sf(data = land, fill = "#ffffff", color = "#000000", size = 0.1) +
-  geom_sf(data = occ %>% filter(!is.na(period)), size = 0.3, color = "#000000") +
+  geom_sf(data = localities %>% filter(!is.na(period)), size = 0.3, color = "#000000") +
   scale_fill_brewer(palette = "Paired") +
   coord_sf(crs = "ESRI:54030") +
   theme_void() +
@@ -95,11 +97,11 @@ ggsave("output/type_localities_map_oceans.png", height = 6, width = 10, dpi = 40
 Join type localities with Oceans and Seas data shapefile:
 
 ```{r message=FALSE, warning=FALSE}
-occ$goas <- goas_simplified$name[st_nearest_feature(occ, goas_simplified, check_crs = TRUE)]
+localities$goas <- goas_simplified$name[st_nearest_feature(localities, goas_simplified, check_crs = TRUE)]
 
 ggplot() +
   geom_sf(data = land, fill = NA, color = "#000000", size = 0.1) +
-  geom_sf(data = occ %>% filter(!is.na(period)), aes(color = goas), size = 0.3) +
+  geom_sf(data = localities %>% filter(!is.na(period)), aes(color = goas), size = 0.3) +
   coord_sf(crs = "ESRI:54030") +
   theme_void() +
   scale_color_brewer(palette = "Paired") +
@@ -112,16 +114,16 @@ ggsave("output/type_localities_map_color.png", height = 4, width = 9, dpi = 400,
 Frequency table:
 
 ```{r message=FALSE, warning=FALSE}
-occ_cleaned <- occ %>%
+localities_cleaned <- localities %>%
   as.data.frame() %>%
   filter(!is.na(period))
 
-stats <- round(table(occ_cleaned$goas, occ_cleaned$period) / nrow(occ_cleaned) * 100, digits = 2)
+stats <- round(table(localities_cleaned$goas, localities_cleaned$period) / nrow(localities_cleaned) * 100, digits = 2)
 stats %>% knitr::kable()
 ```
 
 ```{r message=FALSE, warning=FALSE}
-stats <- occ_cleaned %>%
+stats <- localities_cleaned %>%
   group_by(period, goas) %>%
   summarize(n = n())
 
@@ -131,4 +133,60 @@ ggplot(stats) +
   guides(fill = guide_legend(title = "Oceans and Seas"))
 
 ggsave("output/type_localities_barplot.png", height = 4, width = 7, dpi = 300, bg = "white", scale = 1.5)
+```
+
+## Occurrence statistics
+
+Load all OBIS occurrences from S3:
+
+```{r message=FALSE, warning=FALSE}
+space <- S3FileSystem$create(
+  anonymous = TRUE,
+  scheme = "https",
+  endpoint_override = "ams3.digitaloceanspaces.com"
+)
+
+occ <- open_dataset(space$path("obis-datasets/exports/obis_20220208.parquet")) %>%
+  select(date_year, species, decimalLongitude, decimalLatitude) %>%
+  as_tibble()
+```
+
+Join with Oceans and Seas:
+
+```{r message=FALSE, warning=FALSE}
+occ_coords <- occ %>%
+  distinct(decimalLongitude, decimalLatitude) %>%
+  st_as_sf(coords = c("decimalLongitude", "decimalLatitude"), crs = 4326, remove = FALSE)
+
+if (!file.exists("data/occ_joined.dat")) {
+  occ_joined <- st_join(occ_coords, goas_simplified, join = st_within)
+  save(occ_joined, file = "data/occ_joined.dat")
+} else {
+  load("data/occ_joined.dat")
+}
+
+occ <- occ %>%
+  left_join(occ_joined %>% as.data.frame(), by = c("decimalLongitude", "decimalLatitude"))
+```
+
+Verify the results by sampling some points:
+
+```{r message=FALSE, warning=FALSE}
+ggplot() +
+  geom_sf(data = land, fill = NA, color = "#000000", size = 0.1) +
+  geom_sf(data = occ %>% sample_n(10000) %>% st_as_sf(), aes(color = name), size = 0.3) +
+  coord_sf(crs = "ESRI:54030") +
+  theme_void() +
+  scale_color_brewer(palette = "Paired") +
+  guides(color = guide_legend(title = "Oceans and Seas"))
+```
+
+Statistics
+
+```{r message=FALSE, warning=FALSE}
+stats <- occ %>%
+  group_by(name) %>%
+  summarize(records = n(), species = length(unique(species)))
+
+stats
 ```

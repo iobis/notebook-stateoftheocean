@@ -1,4 +1,5 @@
 .DS_Store
 .Rhistory
 data/goas*
+data/*.dat
 
