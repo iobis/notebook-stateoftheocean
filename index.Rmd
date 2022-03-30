@@ -133,6 +133,13 @@ ggplot(stats) +
   guides(fill = guide_legend(title = "Oceans and Seas"))
 
 ggsave("output/type_localities_barplot.png", height = 4, width = 7, dpi = 300, bg = "white", scale = 1.5)
+
+ggplot(stats) +
+  geom_bar(aes(x = period, y = n, fill = goas), stat = "identity", position = "dodge") +
+  scale_fill_brewer(palette = "Paired") +
+  guides(fill = guide_legend(title = "Oceans and Seas"))
+
+ggsave("output/type_localities_barplot_dodge.png", height = 4, width = 7, dpi = 300, bg = "white", scale = 1.5)
 ```
 
 ## Occurrence statistics
@@ -154,19 +161,21 @@ occ <- open_dataset(space$path("obis-datasets/exports/obis_20220208.parquet")) %
 Join with Oceans and Seas:
 
 ```{r message=FALSE, warning=FALSE}
-occ_coords <- occ %>%
-  distinct(decimalLongitude, decimalLatitude) %>%
-  st_as_sf(coords = c("decimalLongitude", "decimalLatitude"), crs = 4326, remove = FALSE)
-
 if (!file.exists("data/occ_joined.dat")) {
+  occ_coords <- occ %>%
+    distinct(decimalLongitude, decimalLatitude) %>%
+    st_as_sf(coords = c("decimalLongitude", "decimalLatitude"), crs = 4326, remove = FALSE)
   occ_joined <- st_join(occ_coords, goas_simplified, join = st_within)
+  remove(occ_coords)
   save(occ_joined, file = "data/occ_joined.dat")
 } else {
   load("data/occ_joined.dat")
 }
 
 occ <- occ %>%
-  left_join(occ_joined %>% as.data.frame(), by = c("decimalLongitude", "decimalLatitude"))
+  left_join(occ_joined %>% as.data.frame() %>% select(decimalLongitude, decimalLatitude, name), by = c("decimalLongitude", "decimalLatitude"))
+
+remove(occ_joined)
 ```
 
 Verify the results by sampling some points:
@@ -174,14 +183,14 @@ Verify the results by sampling some points:
 ```{r message=FALSE, warning=FALSE}
 ggplot() +
   geom_sf(data = land, fill = NA, color = "#000000", size = 0.1) +
-  geom_sf(data = occ %>% sample_n(10000) %>% st_as_sf(), aes(color = name), size = 0.3) +
+  geom_sf(data = occ %>% sample_n(10000) %>% st_as_sf(coords = c("decimalLongitude", "decimalLatitude"), crs = 4326), aes(color = name), size = 0.3) +
   coord_sf(crs = "ESRI:54030") +
   theme_void() +
   scale_color_brewer(palette = "Paired") +
   guides(color = guide_legend(title = "Oceans and Seas"))
 ```
 
-Statistics
+Statistics:
 
 ```{r message=FALSE, warning=FALSE}
 stats <- occ %>%
@@ -189,4 +198,60 @@ stats <- occ %>%
   summarize(records = n(), species = length(unique(species)))
 
 stats
+```
+
+Statistics over time:
+
+```{r message=FALSE, warning=FALSE}
+stats <- occ %>%
+  filter(date_year >= 1900) %>%
+  group_by(name, date_year) %>%
+  summarize(records = n(), species = length(unique(species)))
+
+ggplot(stats %>% filter(!is.na(name))) +
+  geom_smooth(aes(x = date_year, y = records, color = name), fill = NA, method = "gam") +
+  geom_point(aes(x = date_year, y = records, color = name)) +
+  scale_color_brewer(palette = "Paired") +
+  guides(color = guide_legend(title = "Oceans and Seas")) +
+  scale_y_continuous(trans = "log10")
+
+ggsave("output/records_time.png", height = 4, width = 7, dpi = 300, bg = "white", scale = 1.5)
+
+ggplot(stats %>% filter(!is.na(name))) +
+  geom_smooth(aes(x = date_year, y = species, color = name), fill = NA, method = "gam") +
+  geom_point(aes(x = date_year, y = species, color = name)) +
+  scale_color_brewer(palette = "Paired") +
+  guides(color = guide_legend(title = "Oceans and Seas"))
+
+ggsave("output/species_time.png", height = 4, width = 7, dpi = 300, bg = "white", scale = 1.5)
+
+ggplot(stats %>% filter(!is.na(name))) +
+  geom_smooth(aes(x = date_year, y = species, color = name), fill = NA, method = "gam") +
+  geom_point(aes(x = date_year, y = species, color = name)) +
+  scale_color_brewer(palette = "Paired") +
+  guides(color = guide_legend(title = "Oceans and Seas")) +
+  scale_y_continuous(trans = "log10")
+
+ggsave("output/species_time_log.png", height = 4, width = 7, dpi = 300, bg = "white", scale = 1.5)
+```
+
+Cumulative species:
+
+```{r message=FALSE, warning=FALSE}
+stats_cumulative <- occ %>%
+  filter(!is.na(name) & !is.na(species) & !is.na(date_year)) %>%
+  group_by(name, species) %>%
+  summarize(date_year = min(date_year)) %>%
+  group_by(name, date_year) %>%
+  summarize(species = n()) %>%
+  arrange(name, date_year) %>%
+  mutate(cumulative_species = cumsum(species))
+
+ggplot(stats_cumulative) +
+  geom_line(aes(x = date_year, y = cumulative_species, color = name), size = 1) +
+  scale_color_brewer(palette = "Paired") +
+  guides(color = guide_legend(title = "Oceans and Seas")) +
+  xlim(c(1900, 2025))
+
+ggsave("output/species_cumulative.png", height = 4, width = 7, dpi = 300, bg = "white", scale = 1.5)
 ```
