@@ -22,6 +22,7 @@ library(stringr)
 library(cartomisc)
 library(arrow)
 library(nngeo)
+library(RColorBrewer)
 ```
 
 ## Background spatial data
@@ -204,9 +205,11 @@ Statistics over time:
 
 ```{r message=FALSE, warning=FALSE}
 stats <- occ %>%
-  filter(date_year >= 1900) %>%
+  filter(date_year >= 1900 & !is.na(name)) %>%
   group_by(name, date_year) %>%
-  summarize(records = n(), species = length(unique(species)))
+  summarize(records = n(), species = length(unique(species))) %>%
+  ungroup() %>%
+  tidyr::complete(name, date_year)
 
 ggplot(stats %>% filter(!is.na(name))) +
   geom_smooth(aes(x = date_year, y = records, color = name), fill = NA, method = "gam") +
@@ -233,6 +236,17 @@ ggplot(stats %>% filter(!is.na(name))) +
   scale_y_continuous(trans = "log10")
 
 ggsave("output/species_time_log.png", height = 4, width = 7, dpi = 300, bg = "white", scale = 1.5)
+
+pal <- rev(brewer.pal(11, "RdBu"))
+
+ggplot(stats %>% filter(!is.na(name))) +
+  geom_tile(aes(x = date_year, y = 1, fill = species)) +
+  scale_fill_gradientn(colors = pal, na.value = pal[1]) +
+  facet_wrap(~name, ncol = 3) +
+  theme_minimal() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+ggsave("output/species_stripes.png", height = 4, width = 7, dpi = 300, bg = "white", scale = 1.5)
 ```
 
 Cumulative species:
