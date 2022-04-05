@@ -236,9 +236,13 @@ stats <- occ %>%
 ggplot(stats %>% filter(!is.na(name))) +
   geom_smooth(aes(x = date_year, y = records, color = name), fill = NA, method = "gam") +
   geom_point(aes(x = date_year, y = records, color = name)) +
+  annotate(
+    geom = "text", x = min(stats$date_year), y = max(stats$records, na.rm = TRUE), 
+    label = "(a)", hjust = 0, vjust = 0, size = 7
+  ) +
   scale_color_brewer(palette = "Paired") +
   guides(color = guide_legend(title = "Oceans and Seas")) +
-  scale_y_continuous(trans = "log10") +
+  scale_y_continuous(trans = "log10", name = "Number of records") +
   scale_x_continuous(breaks = scales::breaks_pretty(5)) +
   theme_simple
 
@@ -255,8 +259,13 @@ ggplot(stats %>% filter(!is.na(name))) +
 ggplot(stats %>% filter(!is.na(name))) +
   geom_smooth(aes(x = date_year, y = species, color = name), fill = NA, method = "gam") +
   geom_point(aes(x = date_year, y = species, color = name)) +
+  annotate(
+    geom = "text", x = min(stats$date_year), y = max(stats$species, na.rm = TRUE), 
+    label = "(b)", hjust = 0, vjust = 0, size = 7
+  ) +
   scale_color_brewer(palette = "Paired") +
   scale_x_continuous(breaks = scales::breaks_pretty(5)) +
+  scale_y_continuous(name = "Number of species") +
   theme_simple
 
 ggsave("output/species_time.png", height = 5, width = 7, dpi = 300, bg = "white", scale = 1.5)
@@ -386,9 +395,13 @@ stats_cumulative <- stats_cumulative %>%
 ggplot(stats_cumulative) +
   geom_smooth(aes(x = date_year, y = species / effort, color = name), fill = NA, method = "gam") +
   geom_point(aes(x = date_year, y = species / effort, color = name)) +
+  annotate(
+    geom = "text", x = min(stats_cumulative$date_year), y = max(stats_cumulative$species / stats_cumulative$effort, na.rm = TRUE), 
+    label = "(c)", hjust = 0, vjust = 0, size = 7
+  ) +
   scale_color_brewer(palette = "Paired") +
   guides(color = guide_legend(title = "Oceans and Seas")) +
-  scale_y_continuous(trans = "log10") +
+  scale_y_continuous(trans = "log10", name = "Species added, corrected for sampling effort") +
   scale_x_continuous(breaks = scales::breaks_pretty(5)) +
   theme_simple
 
