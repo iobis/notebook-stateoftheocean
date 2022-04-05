@@ -23,6 +23,18 @@ library(cartomisc)
 library(arrow)
 library(nngeo)
 library(RColorBrewer)
+
+theme_simple <- theme(
+  axis.title.x = element_blank(),
+  panel.grid.major.y = element_line(color = "#cccccc"),
+  panel.background = element_blank(),
+  panel.grid.major.x = element_blank(),
+  panel.grid.minor.x = element_blank(),
+  axis.line.x = element_line(color = "#000000"),
+  legend.position = "bottom",
+  legend.title = element_blank(),
+  legend.key = element_blank()
+)
 ```
 
 ## Background spatial data
@@ -106,6 +118,17 @@ ggplot() +
   coord_sf(crs = "ESRI:54030") +
   theme_void() +
   scale_color_brewer(palette = "Paired") +
+  theme(legend.position = "none") +
+  facet_wrap(~period, ncol = 2)
+
+ggsave("output/type_localities_map_color_nolegend.png", height = 6, width = 10, dpi = 400, bg = "white")
+
+ggplot() +
+  geom_sf(data = land, fill = NA, color = "#000000", size = 0.1) +
+  geom_sf(data = localities %>% filter(!is.na(period)), aes(color = goas), size = 0.3) +
+  coord_sf(crs = "ESRI:54030") +
+  theme_void() +
+  scale_color_brewer(palette = "Paired") +
   guides(color = guide_legend(title = "Oceans and Seas")) +
   facet_wrap(~period, ncol = 2)
 
@@ -155,7 +178,7 @@ space <- S3FileSystem$create(
 )
 
 occ <- open_dataset(space$path("obis-datasets/exports/obis_20220208.parquet")) %>%
-  select(date_year, species, decimalLongitude, decimalLatitude) %>%
+  select(date_year, date_mid, species, decimalLongitude, decimalLatitude) %>%
   as_tibble()
 ```
 
@@ -175,7 +198,6 @@ if (!file.exists("data/occ_joined.dat")) {
 
 occ <- occ %>%
   left_join(occ_joined %>% as.data.frame() %>% select(decimalLongitude, decimalLatitude, name), by = c("decimalLongitude", "decimalLatitude"))
-
 remove(occ_joined)
 ```
 
@@ -216,26 +238,37 @@ ggplot(stats %>% filter(!is.na(name))) +
   geom_point(aes(x = date_year, y = records, color = name)) +
   scale_color_brewer(palette = "Paired") +
   guides(color = guide_legend(title = "Oceans and Seas")) +
-  scale_y_continuous(trans = "log10")
+  scale_y_continuous(trans = "log10") +
+  scale_x_continuous(breaks = scales::breaks_pretty(5)) +
+  theme_simple
 
-ggsave("output/records_time.png", height = 4, width = 7, dpi = 300, bg = "white", scale = 1.5)
+ggsave("output/records_time.png", height = 5, width = 7, dpi = 300, bg = "white", scale = 1.5)
+
+ggplot(stats %>% filter(!is.na(name))) +
+  geom_bar(aes(x = date_year, y = records, fill = name), stat = "identity", size = 0, width = 1) +
+  scale_color_brewer(palette = "Paired") +
+  scale_y_continuous(trans = "log10") +
+  scale_x_continuous(breaks = scales::breaks_pretty(5)) +
+  facet_wrap(~name) +
+  theme_simple
 
 ggplot(stats %>% filter(!is.na(name))) +
   geom_smooth(aes(x = date_year, y = species, color = name), fill = NA, method = "gam") +
   geom_point(aes(x = date_year, y = species, color = name)) +
   scale_color_brewer(palette = "Paired") +
-  guides(color = guide_legend(title = "Oceans and Seas"))
+  scale_x_continuous(breaks = scales::breaks_pretty(5)) +
+  theme_simple
 
-ggsave("output/species_time.png", height = 4, width = 7, dpi = 300, bg = "white", scale = 1.5)
+ggsave("output/species_time.png", height = 5, width = 7, dpi = 300, bg = "white", scale = 1.5)
 
 ggplot(stats %>% filter(!is.na(name))) +
   geom_smooth(aes(x = date_year, y = species, color = name), fill = NA, method = "gam") +
   geom_point(aes(x = date_year, y = species, color = name)) +
   scale_color_brewer(palette = "Paired") +
-  guides(color = guide_legend(title = "Oceans and Seas")) +
-  scale_y_continuous(trans = "log10")
+  scale_y_continuous(trans = "log10") +
+  theme_simple
 
-ggsave("output/species_time_log.png", height = 4, width = 7, dpi = 300, bg = "white", scale = 1.5)
+ggsave("output/species_time_log.png", height = 5, width = 7, dpi = 300, bg = "white", scale = 1.5)
 
 pal <- rev(brewer.pal(11, "RdBu"))
 
@@ -244,9 +277,34 @@ ggplot(stats %>% filter(!is.na(name))) +
   scale_fill_gradientn(colors = pal, na.value = pal[1]) +
   facet_wrap(~name, ncol = 3) +
   theme_minimal() +
-  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.text.y = element_blank(), axis.line.y = element_blank(), axis.title = element_blank())
 
 ggsave("output/species_stripes.png", height = 4, width = 7, dpi = 300, bg = "white", scale = 1.5)
+
+ggplot(stats %>% filter(!is.na(name))) +
+  geom_tile(aes(x = date_year, y = 1, fill = species)) +
+  scale_fill_gradientn(colors = pal, na.value = pal[1], trans = "log10") +
+  facet_wrap(~name, ncol = 3) +
+  theme_minimal() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.text.y = element_blank(), axis.line.y = element_blank(), axis.title = element_blank())
+
+ggsave("output/species_stripes_log.png", height = 4, width = 7, dpi = 300, bg = "white", scale = 1.5)
+```
+
+Combined OBIS records trend:
+
+```{r message=FALSE, warning=FALSE}
+stats <- occ %>%
+  filter(date_year >= 1900 & !is.na(name)) %>%
+  group_by(date_year) %>%
+  summarize(records = n(), species = length(unique(species))) %>%
+  ungroup()
+
+ggplot(stats) +
+  geom_bar(aes(x = date_year, y = records), stat = "identity", width = 1, fill = "#DE8F6E") +
+  scale_y_continuous() +
+  scale_x_continuous(breaks = scales::breaks_pretty(5)) +
+  theme_simple
 ```
 
 Cumulative species:
@@ -265,7 +323,74 @@ ggplot(stats_cumulative) +
   geom_line(aes(x = date_year, y = cumulative_species, color = name), size = 1) +
   scale_color_brewer(palette = "Paired") +
   guides(color = guide_legend(title = "Oceans and Seas")) +
-  xlim(c(1900, 2025))
+  xlim(c(1900, 2025)) +
+  theme_simple
 
 ggsave("output/species_cumulative.png", height = 4, width = 7, dpi = 300, bg = "white", scale = 1.5)
+```
+
+## Correcting for sampling effort
+
+```{r message=FALSE, warning=FALSE}
+create_grid <- function() {
+  b <- st_as_sfc(st_bbox(c(xmin = -180, xmax = 180, ymin = -90, ymax = 90))) %>%
+    st_set_crs(4326) %>%
+    st_transform(3410)
+  h <- st_make_grid(b, cellsize = 100000, square = FALSE) %>%
+    st_intersection(b) %>%
+    st_as_sf() %>%
+    mutate(cell = row_number())
+  i <- as.numeric(st_area(h)) > max(as.numeric(st_area(h))) * 0.99
+  h[i,] %>% st_transform(4326)
+}
+
+if (!file.exists("data/occ_joined_hex.dat")) {
+  grid <- create_grid()
+  occ_joined_hex <- occ %>%
+    distinct(decimalLongitude, decimalLatitude) %>%
+    st_as_sf(coords = c("decimalLongitude", "decimalLatitude"), crs = 4326, remove = FALSE) %>%
+    st_join(grid, join = st_within)
+  save(occ_joined_hex, file = "data/occ_joined_hex.dat")
+} else {
+  load("data/occ_joined_hex.dat")
+}
+
+occ <- occ %>%
+  left_join(occ_joined_hex %>% as.data.frame() %>% select(decimalLongitude, decimalLatitude, cell), by = c("decimalLongitude", "decimalLatitude")) %>%
+  mutate(date_month = lubridate::month(as.POSIXct(as.numeric(date_mid), origin = "1970-01-01")))
+
+remove(occ_joined_hex)
+```
+
+```{r message=FALSE, warning=FALSE}
+sampling_effort <- occ %>%
+  filter(!is.na(name) & !is.na(cell) & date_year >= 1900) %>%
+  group_by(date_year, name, cell, date_month) %>%
+  summarize() %>%
+  group_by(date_year, name) %>%
+  summarize(effort = n())
+
+ggplot(sampling_effort) +
+  geom_smooth(aes(x = date_year, y = effort, color = name), fill = NA, method = "gam") +
+  geom_point(aes(x = date_year, y = effort, color = name)) +
+  scale_color_brewer(palette = "Paired") +
+  guides(color = guide_legend(title = "Oceans and Seas")) +
+  scale_y_continuous(trans = "log10") +
+  scale_x_continuous(breaks = scales::breaks_pretty(5)) +
+  theme_simple
+
+stats_cumulative <- stats_cumulative %>%
+  left_join(sampling_effort, by = c("date_year", "name")) %>%
+  filter(date_year >= 1900)
+
+ggplot(stats_cumulative) +
+  geom_smooth(aes(x = date_year, y = species / effort, color = name), fill = NA, method = "gam") +
+  geom_point(aes(x = date_year, y = species / effort, color = name)) +
+  scale_color_brewer(palette = "Paired") +
+  guides(color = guide_legend(title = "Oceans and Seas")) +
+  scale_y_continuous(trans = "log10") +
+  scale_x_continuous(breaks = scales::breaks_pretty(5)) +
+  theme_simple
+
+ggsave("output/species_new_corrected_log.png", height = 4, width = 7, dpi = 300, bg = "white", scale = 1.5)
 ```
